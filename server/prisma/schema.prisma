@@ -1,0 +1,137 @@
+// Hotel Business Software - Database Schema
+//
+// Uses SQLite (file-based, zero external setup) via Prisma. SQLite has no
+// native enum type, so status/role fields are stored as String and validated
+// with Zod at the API boundary (see src/routes/*.ts). Allowed values mirror
+// the constants in src/lib/constants.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("FRONT_DESK") // ADMIN | MANAGER | FRONT_DESK | HOUSEKEEPING
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  housekeepingTasks   HousekeepingTask[] @relation("AssignedTo")
+  createdReservations Reservation[]      @relation("CreatedBy")
+}
+
+model RoomType {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  basePrice   Float
+  capacity    Int      @default(2)
+  amenities   String? // comma separated
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rooms Room[]
+}
+
+model Room {
+  id         String   @id @default(cuid())
+  number     String   @unique
+  floor      Int      @default(1)
+  status     String   @default("AVAILABLE") // AVAILABLE | OCCUPIED | CLEANING | MAINTENANCE | OUT_OF_SERVICE
+  notes      String?
+  roomTypeId String
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  reservations      Reservation[]
+  housekeepingTasks HousekeepingTask[]
+}
+
+model Guest {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  idType    String?
+  idNumber  String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservations Reservation[]
+}
+
+model Reservation {
+  id             String    @id @default(cuid())
+  guestId        String
+  guest          Guest     @relation(fields: [guestId], references: [id])
+  roomId         String
+  room           Room      @relation(fields: [roomId], references: [id])
+  checkIn        DateTime
+  checkOut       DateTime
+  actualCheckIn  DateTime?
+  actualCheckOut DateTime?
+  adults         Int       @default(1)
+  children       Int       @default(0)
+  status         String    @default("BOOKED") // BOOKED | CHECKED_IN | CHECKED_OUT | CANCELLED | NO_SHOW
+  source         String?   @default("Direct")
+  ratePerNight   Float
+  totalAmount    Float
+  notes          String?
+  createdById    String?
+  createdBy      User?     @relation("CreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  payments Payment[]
+  invoice  Invoice?
+}
+
+model Payment {
+  id            String      @id @default(cuid())
+  reservationId String
+  reservation   Reservation @relation(fields: [reservationId], references: [id])
+  amount        Float
+  method        String      @default("CASH") // CASH | CARD | BANK_TRANSFER | ONLINE
+  status        String      @default("PAID") // PENDING | PAID | REFUNDED | FAILED
+  paidAt        DateTime    @default(now())
+  reference     String?
+  createdAt     DateTime    @default(now())
+}
+
+model Invoice {
+  id            String      @id @default(cuid())
+  reservationId String      @unique
+  reservation   Reservation @relation(fields: [reservationId], references: [id])
+  invoiceNumber String      @unique
+  subtotal      Float
+  taxRate       Float       @default(0)
+  taxAmount     Float       @default(0)
+  total         Float
+  issuedAt      DateTime    @default(now())
+  notes         String?
+}
+
+model HousekeepingTask {
+  id           String    @id @default(cuid())
+  roomId       String
+  room         Room      @relation(fields: [roomId], references: [id])
+  status       String    @default("PENDING") // PENDING | IN_PROGRESS | DONE | VERIFIED
+  assignedToId String?
+  assignedTo   User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
+  notes        String?
+  dueDate      DateTime  @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
