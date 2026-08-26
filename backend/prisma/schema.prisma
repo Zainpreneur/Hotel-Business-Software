@@ -1,0 +1,161 @@
+// Hotel Business Software - Database Schema
+// Default datasource is SQLite for zero-config local development.
+// For production, set DATABASE_URL to a PostgreSQL connection string
+// and change provider below to "postgresql". SQLite does not support
+// native enums, so enum-like fields are plain Strings validated at the
+// API layer (see backend/src/routes/*.ts for the allowed values):
+//
+//   User.role            ADMIN | MANAGER | RECEPTIONIST | HOUSEKEEPING | ACCOUNTANT
+//   Room.status          AVAILABLE | OCCUPIED | RESERVED | MAINTENANCE | CLEANING | OUT_OF_SERVICE
+//   Reservation.status   PENDING | CONFIRMED | CHECKED_IN | CHECKED_OUT | CANCELLED | NO_SHOW
+//   Payment.method       CASH | CARD | ONLINE | BANK_TRANSFER
+//   Payment.status       PENDING | COMPLETED | REFUNDED | FAILED
+//   Invoice.status       UNPAID | PARTIALLY_PAID | PAID | VOID
+//   HousekeepingTask.type    CLEANING | MAINTENANCE | INSPECTION | DEEP_CLEAN
+//   HousekeepingTask.status  PENDING | IN_PROGRESS | COMPLETED | VERIFIED
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  role         String    @default("RECEPTIONIST")
+  phone        String?
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  reservations       Reservation[]      @relation("CreatedByUser")
+  housekeepingTasks  HousekeepingTask[] @relation("AssignedToUser")
+}
+
+model RoomType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  basePrice   Float
+  capacity    Int      @default(2)
+  amenities   String?  // comma-separated list
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rooms Room[]
+}
+
+model Room {
+  id         String     @id @default(cuid())
+  number     String     @unique
+  floor      Int        @default(1)
+  status     String     @default("AVAILABLE")
+  notes      String?
+  roomTypeId String
+  roomType   RoomType   @relation(fields: [roomTypeId], references: [id])
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  reservations      Reservation[]
+  housekeepingTasks HousekeepingTask[]
+}
+
+model Guest {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  address   String?
+  idType    String?
+  idNumber  String?
+  notes     String?
+  vip       Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservations Reservation[]
+}
+
+model Reservation {
+  id               String            @id @default(cuid())
+  guestId          String
+  guest            Guest             @relation(fields: [guestId], references: [id])
+  roomId           String
+  room             Room              @relation(fields: [roomId], references: [id])
+  checkIn          DateTime
+  checkOut         DateTime
+  actualCheckIn    DateTime?
+  actualCheckOut   DateTime?
+  status           String            @default("PENDING")
+  adults           Int               @default(1)
+  children         Int               @default(0)
+  source           String?           // e.g. Walk-in, Website, Phone, OTA
+  specialRequests  String?
+  totalAmount      Float             @default(0)
+  createdById      String?
+  createdBy        User?             @relation("CreatedByUser", fields: [createdById], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  invoice Invoice?
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  reservationId String        @unique
+  reservation   Reservation   @relation(fields: [reservationId], references: [id])
+  subtotal      Float         @default(0)
+  tax           Float         @default(0)
+  discount      Float         @default(0)
+  total         Float         @default(0)
+  status        String        @default("UNPAID")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items    InvoiceItem[]
+  payments Payment[]
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Int     @default(1)
+  unitPrice   Float
+  amount      Float
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  invoiceId       String
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id])
+  amount          Float
+  method          String        @default("CASH")
+  status          String        @default("COMPLETED")
+  transactionRef  String?
+  createdAt       DateTime      @default(now())
+}
+
+model HousekeepingTask {
+  id           String             @id @default(cuid())
+  roomId       String
+  room         Room               @relation(fields: [roomId], references: [id])
+  assignedToId String?
+  assignedTo   User?              @relation("AssignedToUser", fields: [assignedToId], references: [id])
+  type         String             @default("CLEANING")
+  status       String             @default("PENDING")
+  notes        String?
+  dueDate      DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
